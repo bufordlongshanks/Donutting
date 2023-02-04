@@ -6,78 +6,54 @@ from matplotlib.animation import FuncAnimation
 def generate_torus_2(N, n, r, R):
     dphi = 2*np.pi/n
     dtheta = 2*np.pi/N
-    init_pos = np.array([[0],[R+r],[0]])
-    init_norm = np.array([[0],[1],[0]])
-    tor_pts = np.array([[],[],[],[],[],[]])
+    init_pn = np.zeros((6,n))
+    init_pn[:,0]=np.array([0,R+r,0,0,1,0])
+    tor_pts = np.zeros((6,n*N))
     for dn in range(1,n):
-        init_pos = np.concatenate((init_pos,np.array([[0], [R + r*np.cos(dn*dphi)], [r*np.sin(dn*dphi)]])),axis=1)
-        init_norm = np.concatenate((init_norm,np.array([[0],[np.cos(dn*dphi)],[np.sin(dn*dphi)]])),axis = 1)
+        init_pn[:,dn] = np.array([0, R + r*np.cos(dn*dphi), r*np.sin(dn*dphi),0,np.cos(dn*dphi),np.sin(dn*dphi)])
     for dN in range(N):
-        rot_z = np.array([[np.cos(dN*dtheta), -np.sin(dN*dtheta),0],[np.sin(dN*dtheta),np.cos(dN*dtheta),0],[0,0,1]])
-        for i in range(n):
-            pt = np.dot(rot_z, init_pos[:, i])
-            norm = np.dot(rot_z, init_norm[:,i])
-            pt = pt.reshape(-1, 1)
-            norm =  norm.reshape(-1, 1)
-            new_pt = np.concatenate((pt,norm), axis=0)
-            tor_pts = np.concatenate((tor_pts, new_pt),axis = 1)
+        rot_z = np.array([[np.cos(dN*dtheta), -np.sin(dN*dtheta),0,0,0,0],[np.sin(dN*dtheta),np.cos(dN*dtheta),0,0,0,0],[0,0,1,0,0,0],[0,0,0,np.cos(dN*dtheta), -np.sin(dN*dtheta),0],[0,0,0,np.sin(dN*dtheta),np.cos(dN*dtheta),0],[0,0,0,0,0,1]])
+        pt = np.dot(rot_z, init_pn)
+        tor_pts[:,dN*n:(dN+1)*n] = pt
     return tor_pts
                 
 def convert_to_pix(tor_pts_proj, size, rnge, v1):
-    pixels = np.zeros((size,size))
+    pixels = np.ones((size,size))
     pixel_z = np.ones((size,size))*(rnge+1)
-    pixel_norm = [[0 for i in range(size)] for i in range(size)]
     for i in range(np.shape(tor_pts_proj)[1]):
         i_x = int(np.floor(((tor_pts_proj[0,i]/(2*rnge))+0.5)*size))
-        i_y = int(np.floor(((tor_pts_proj[1,i]/(2*rnge))+0.5)*size))
+        i_y = int(np.floor(((tor_pts_proj[1,i]/(2*rnge))+0.5)*size)) 
         if tor_pts_proj[2,i]< pixel_z[i_x, i_y]:
             pixel_z[i_x, i_y] = tor_pts_proj[2,i]
-            pixel_norm[i_x][i_y] = [[tor_pts_proj[3,i]],[tor_pts_proj[4,i]],[tor_pts_proj[5,i]]]
-        
-    for  i, el in enumerate(pixel_norm):
-        for j, norm in enumerate(el):
-            if type(norm) == int:
-                pixels[i,j] = 1
+            v2 = tor_pts_proj[3:, i]  
+            dot_product = np.dot(v1, v2)
+            magnitude_v2 = np.linalg.norm(v2)
+            magnitude_v1 = np.linalg.norm(v1)
+            cosine_of_angle = dot_product / (magnitude_v1 * magnitude_v2)
+            if cosine_of_angle<0:
+                pixels[i_x,i_y] = 1
             else:
-                v2 = np.array(norm)
-                dot_product = np.dot(v1, v2)
-                magnitude_v1 = np.linalg.norm(v1)
-                magnitude_v2 = np.linalg.norm(v2)
-                cosine_of_angle = dot_product / (magnitude_v1 * magnitude_v2)
-                if cosine_of_angle<0:
-                    pixels[i,j] = 1
-                else:
-                    pixels[i,j]=1-cosine_of_angle
-        
-        
-            
-    
+                pixels[i_x, i_y]=1-cosine_of_angle
     return pixels
 
 def project(tor_pts_i, k1, k2):
     tor_pts_proj = tor_pts_i
-    for i in range(np.shape(tor_pts_i)[1]):
-        tor_pts_proj[0,i] = k1*tor_pts_i[0,i]/(k2+tor_pts_i[2,i])
-        tor_pts_proj[1,i] = k1*tor_pts_i[1,i]/(k2+tor_pts_i[2,i])
+    tor_pts_proj[0,:] = k1*tor_pts_i[0,:]/(k2+tor_pts_i[2,:])
+    tor_pts_proj[1,:] = k1*tor_pts_i[1,:]/(k2+tor_pts_i[2,:])
     return tor_pts_proj
 
 
 def rotate(tor_pts_i, a, b):
     ang_x = a*np.pi/180
     ang_y = b*np.pi/180
-    rot_x = np.array([[1,0,0],[0, np.cos(ang_x), -np.sin(ang_x)],[0, np.sin(ang_x), np.cos(ang_x)]])
-    rot_y = np.array([[np.cos(ang_y), 0, np.sin(ang_y)],[0,1,0],[-np.sin(ang_y),0,np.cos(ang_y)]])
-    rot_tor_pts = np.array([[],[],[],[],[],[]])
-    for i in range(np.shape(tor_pts_i)[1]):
-        rot_pos = np.dot(rot_y,np.dot(rot_x, tor_pts_i[:3,i]))
-        rot_norm = np.dot(rot_y,np.dot(rot_x, tor_pts_i[3:,i]))
-        rot_pos = rot_pos.reshape(-1, 1)
-        rot_norm =  rot_norm.reshape(-1, 1)
-        rot_pt = np.concatenate((rot_pos,rot_norm), axis=0)
-        rot_tor_pts = np.concatenate((rot_tor_pts, rot_pt),axis=1)
+    n_pt = np.shape(tor_pts_i)[1]
+    rot_x = np.array([[1,0,0,0,0,0],[0, np.cos(ang_x), -np.sin(ang_x),0,0,0],[0, np.sin(ang_x), np.cos(ang_x),0,0,0],[0,0,0,1,0,0],[0,0,0,0, np.cos(ang_x), -np.sin(ang_x)],[0,0,0,0, np.sin(ang_x), np.cos(ang_x)]])
+    rot_y = np.array([[np.cos(ang_y), 0, np.sin(ang_y),0,0,0],[0, 1, 0,0,0,0],[-np.sin(ang_y), 0, np.cos(ang_y),0,0,0],[0, 0, 0, np.cos(ang_y), 0, np.sin(ang_y)],[0, 0, 0, 0, 1, 0],[0, 0, 0, -np.sin(ang_y), 0, np.cos(ang_y)]])
+    rot_tor_pts = np.zeros((6,n_pt))
+    rot_tor_pts = np.dot(rot_y,np.dot(rot_x,tor_pts_i))
     return rot_tor_pts
 
-size = 200
+size = 100
 rnge = 10
 r = 3.5
 R = 5.5
@@ -85,8 +61,8 @@ v1 = [-1,-1,-2]
 angle = 5
 k1 = 30
 k2 = 30
-n = 25
-N = 55
+n = 40
+N = 70
 
 tor_pts = generate_torus_2(N,n,r, R)
 pixels = convert_to_pix(tor_pts, size, rnge, v1)
@@ -106,5 +82,5 @@ def update(frame, tor_pts, size, angle, v1, rnge):
 fig = plt.figure(figsize=(10, 8))
 
 im = plt.imshow(pixels, cmap=plt.get_cmap('gray_r'))
-ani = FuncAnimation(fig, update, frames = 500, interval = 0, fargs=[tor_pts, size, angle, v1, rnge])
+ani = FuncAnimation(fig, update, frames = 500, interval = 0, fargs=[tor_pts, size, angle, v1, rnge],blit=True)
 plt.show()
